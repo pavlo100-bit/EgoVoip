@@ -4,18 +4,24 @@ import { TextInput, Button, StyleSheet, Alert } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
-const SERVER_URL = 'https://deep-dolls-sell.loca.lt';
+const SERVER_URL = 'https://egovoip-production.up.railway.app';
 
 export default function HomeScreen() {
   const [number, setNumber] = useState('');
 
   const makeCall = async () => {
+    if (!number.trim()) {
+      Alert.alert('שגיאה', 'נא להזין מספר לחיוג');
+      return;
+    }
+
     try {
-      const response = await fetch(SERVER_URL);
-      const text = await response.text();
-      Alert.alert("Server response", text);
+      const response = await fetch(`${SERVER_URL}/health`);
+      const data = await response.json();
+
+      Alert.alert('השרת ענה', data.message);
     } catch (e) {
-      Alert.alert("Error", "Cannot reach server");
+      Alert.alert('שגיאת חיבור', 'לא ניתן להגיע לשרת');
     }
   };
 
@@ -25,7 +31,7 @@ export default function HomeScreen() {
 
       <TextInput
         style={styles.input}
-        placeholder="Enter number"
+        placeholder="הכנס מספר לחיוג"
         keyboardType="phone-pad"
         value={number}
         onChangeText={setNumber}
@@ -41,7 +47,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: 20,
-    gap: 20,
+    gap: 16,
   },
   input: {
     borderWidth: 1,

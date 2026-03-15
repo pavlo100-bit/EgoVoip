@@ -1,27 +1,62 @@
 import { useState } from 'react';
 import { TextInput, Button, StyleSheet, Alert } from 'react-native';
-
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
+import { ThemedText } from '@/components/ThemedText';
+import { ThemedView } from '@/components/ThemedView';
 
 const SERVER_URL = 'https://egovoip-production.up.railway.app';
 
 export default function HomeScreen() {
   const [number, setNumber] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const normalizePhoneNumber = (value: string) => {
+    return value.replace(/[^\d+]/g, '').trim();
+  };
 
   const makeCall = async () => {
-    if (!number.trim()) {
+    const cleanNumber = normalizePhoneNumber(number);
+
+    if (!cleanNumber) {
       Alert.alert('שגיאה', 'נא להזין מספר לחיוג');
       return;
     }
 
-    try {
-      const response = await fetch(`${SERVER_URL}/health`);
-      const data = await response.json();
+    setLoading(true);
 
-      Alert.alert('השרת ענה', data.message);
-    } catch (e) {
+    try {
+      const response = await fetch(`${SERVER_URL}/call`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ number: cleanNumber }),
+      });
+
+      const text = await response.text();
+
+      let data: any = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { message: text };
+      }
+
+      if (!response.ok) {
+        Alert.alert(
+          'שגיאת שרת',
+          data.message || 'השרת החזיר שגיאה'
+        );
+        return;
+      }
+
+      Alert.alert(
+        '✅ בוצע',
+        data.message || `המספר ${cleanNumber} נשלח לשרת`
+      );
+    } catch (error) {
       Alert.alert('שגיאת חיבור', 'לא ניתן להגיע לשרת');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -35,9 +70,16 @@ export default function HomeScreen() {
         keyboardType="phone-pad"
         value={number}
         onChangeText={setNumber}
+        editable={!loading}
+        autoCapitalize="none"
+        autoCorrect={false}
       />
 
-      <Button title="Call" onPress={makeCall} />
+      <Button
+        title={loading ? 'שולח...' : 'Call'}
+        onPress={makeCall}
+        disabled={loading}
+      />
     </ThemedView>
   );
 }

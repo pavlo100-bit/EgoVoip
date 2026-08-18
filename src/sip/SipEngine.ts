@@ -111,11 +111,23 @@ class SipEngine extends Emitter {
     });
 
     this.ua.on('connecting', () => {
+      console.log('[sip-diag] WebSocket connecting to', credentials.wsUri);
       this.registration = 'connecting';
       this.publish();
     });
 
+    // Fires once the WebSocket transport itself opens — before any SIP
+    // REGISTER is sent. Distinct from 'registered', which only fires after a
+    // 200 OK to that REGISTER.
+    this.ua.on('connected', () => {
+      console.log('[sip-diag] WebSocket connected — sending REGISTER next');
+    });
+
     this.ua.on('disconnected', (e: any) => {
+      console.log(
+        '[sip-diag] WebSocket disconnected. error:', !!e?.error,
+        'code:', e?.code, 'reason:', e?.reason ?? '(none)',
+      );
       this.registration = 'failed';
       this.registrationError = e?.error
         ? `Transport error: ${e.reason ?? 'websocket closed'}`
@@ -123,18 +135,29 @@ class SipEngine extends Emitter {
       this.publish();
     });
 
-    this.ua.on('registered', () => {
+    this.ua.on('registered', (e: any) => {
+      const resp = e?.response;
+      console.log(
+        '[sip-diag] REGISTER succeeded. status:', resp?.status_code,
+        resp?.reason_phrase, '| Expires:', resp?.getHeader?.('Expires') ?? '(none)',
+      );
       this.registration = 'registered';
       this.registrationError = null;
       this.publish();
     });
 
-    this.ua.on('unregistered', () => {
+    this.ua.on('unregistered', (e: any) => {
+      console.log('[sip-diag] UA unregistered. cause:', e?.cause ?? '(none)');
       this.registration = 'unregistered';
       this.publish();
     });
 
     this.ua.on('registrationFailed', (e: any) => {
+      const resp = e?.response;
+      console.log(
+        '[sip-diag] REGISTER failed. cause:', e?.cause,
+        '| status:', resp?.status_code ?? '(no response)', resp?.reason_phrase ?? '',
+      );
       this.registration = 'failed';
       this.registrationError = describeCause(e?.cause) ?? 'Registration failed';
       this.publish();

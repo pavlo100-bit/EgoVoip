@@ -70,7 +70,7 @@ async function main() {
   bridgeUrl.searchParams.set('jsonpCallback', CALLBACK_NAME);
   bridgeUrl.searchParams.set('key', webrtcKey);
   bridgeUrl.searchParams.set('sipId', sipLogin);
-  bridgeUrl.searchParams.set('integrationType', 'CRM');
+  bridgeUrl.searchParams.set('integrationType', 'site');
 
   const bridgeRes = await fetch(bridgeUrl.toString());
   const bridgeText = await bridgeRes.text();

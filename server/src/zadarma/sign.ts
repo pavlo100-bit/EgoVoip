@@ -43,6 +43,8 @@ export interface ZadarmaAuth {
 export interface SignedRequest {
   url: string;
   headers: Record<string, string>;
+  /** Only set for non-GET methods — the form-urlencoded request body. */
+  body?: string;
 }
 
 /**
@@ -52,21 +54,42 @@ export interface SignedRequest {
  * @param params Only the parameters this specific call actually needs. Do
  *   not add `format` — it is not required, and adding it when the working
  *   example doesn't changes params_str and therefore the signature.
+ * @param httpMethod Defaults to GET. The signature is computed identically
+ *   either way — it's the SAME params_str regardless of transport — but
+ *   WHERE those params physically travel differs: GET puts them in the query
+ *   string with no body; POST/PUT/DELETE put them in a form-urlencoded body
+ *   with no query string at all. Sending params in the wrong place makes the
+ *   signature Zadarma computes server-side (from whatever it actually
+ *   received) diverge from the one sent, and the request is rejected as
+ *   "Not authorized" even though the signing math is correct — the PHP SDK's
+ *   Client::call() branches on exactly this (CURLOPT_URL with a query string
+ *   for GET vs. CURLOPT_POSTFIELDS for everything else).
  */
 export function signZadarmaRequest(
   baseUrl: string,
   method: string,
   params: Record<string, string>,
   auth: ZadarmaAuth,
+  httpMethod: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
 ): SignedRequest {
   const paramsString = rfc1738Query(params);
   const md5Hex = createHash('md5').update(paramsString).digest('hex');
   const stringToSign = method + paramsString + md5Hex;
   const hmacHex = createHmac('sha1', auth.secret).update(stringToSign).digest('hex');
   const signature = Buffer.from(hmacHex, 'utf8').toString('base64');
+  const headers: Record<string, string> = { Authorization: `${auth.key}:${signature}` };
 
+  if (httpMethod === 'GET') {
+    return {
+      url: paramsString ? `${baseUrl}${method}?${paramsString}` : `${baseUrl}${method}`,
+      headers,
+    };
+  }
+
+  headers['Content-Type'] = 'application/x-www-form-urlencoded';
   return {
-    url: paramsString ? `${baseUrl}${method}?${paramsString}` : `${baseUrl}${method}`,
-    headers: { Authorization: `${auth.key}:${signature}` },
+    url: `${baseUrl}${method}`,
+    headers,
+    body: paramsString,
   };
 }

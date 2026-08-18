@@ -13,11 +13,23 @@
  *
  * What we know, empirically, from reading that script:
  *   - Called as a JSONP request: `?jsonpCallback=<name>&key=<key>&sipId=<sip
- *     login>&integrationType=<string, widget defaults to "CRM">`
+ *     login>&integrationType=<"site"|"CRM"|"my">`
  *   - Response body is JS: `<name>({ ...json... })`
  *   - On success the object has: domain, username, pass, datacenter
  *   - On failure it has a truthy `error` field (exact shape unconfirmed —
  *     the widget doesn't destructure it beyond a boolean check)
+ *
+ * `integrationType` MUST match how the widget/domain was registered.
+ * `loader-phone-fn.js`'s `zadarmaWidgetFn` — the actual public "embed on your
+ * website" entry point, which is what `POST /v1/webrtc/create/` (a domain
+ * registration) corresponds to — explicitly passes `type: 'site'`, and that
+ * value flows unchanged into every downstream call including this one.
+ * Confirmed live: `integrationType=site` resolves real credentials for a
+ * widget created via `/v1/webrtc/create/`; `CRM` and `my` both fail with
+ * `{"error":{"content":"Widget with this key and SIP not found."}}` for the
+ * exact same key/SIP, even though the widget genuinely exists — the endpoint
+ * is checking the (key, SIP, integrationType) triple against how the widget
+ * was actually registered, not just (key, SIP).
  *
  * Risk: Zadarma has made no compatibility promise for this endpoint. It could
  * change shape, start requiring a Referer/Origin check that blocks
@@ -76,7 +88,7 @@ export async function resolveWebphoneData(
   url.searchParams.set('jsonpCallback', CALLBACK_NAME);
   url.searchParams.set('key', webrtcKey);
   url.searchParams.set('sipId', sipLogin);
-  url.searchParams.set('integrationType', 'CRM');
+  url.searchParams.set('integrationType', 'site');
 
   const res = await fetch(url.toString());
   if (!res.ok) {

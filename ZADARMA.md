@@ -55,15 +55,25 @@ discrepancies. Re-tested against the live API afterward:
 1. `GET https://api.zadarma.com/v1/webrtc/get_key/?sip=<sipLogin>` (signed, documented)
    → `{ "status": "success", "key": "<temporary key, ~72h>" }`
 
-2. `GET https://api.zadarma.com/sys/webrtc/get_webphone_data.php?key=<key>&sipId=<sipLogin>&integrationType=CRM&jsonpCallback=<name>` (**unsigned, undocumented, JSONP**)
+2. `GET https://api.zadarma.com/sys/webrtc/get_webphone_data.php?key=<key>&sipId=<sipLogin>&integrationType=site&jsonpCallback=<name>` (**unsigned, undocumented, JSONP**)
    → body is JS: `<name>({ "domain": "...", "username": "...", "pass": "...", "datacenter": "..." })`
    - `domain` + `username` + `pass` are required; `datacenter` is informational
    - On failure the object carries a truthy `error` field — the widget only
      checks truthiness, so the exact error shape (string? object? code?) is
      unconfirmed. Treat any non-empty `error` as fatal.
-   - `integrationType` defaults to `"CRM"` in Zadarma's own widget when no
-     override is passed in; there's no evidence other values behave
-     differently, but this hasn't been tested.
+   - **`integrationType` must match how the widget/domain was registered —
+     confirmed by testing, not assumed.** `loader-phone-fn.js`'s
+     `zadarmaWidgetFn` (the real "embed on your website" entry point, which is
+     what `POST /v1/webrtc/create/` — a domain registration — corresponds to)
+     explicitly sets `type: 'site'`, and that value flows unchanged into every
+     downstream call including this one. Verified live: for a widget created
+     via `/v1/webrtc/create/`, `integrationType=site` resolves real
+     credentials; `CRM` and `my` both fail identically —
+     `{"error":{"content":"Widget with this key and SIP not found."}}` — for
+     the exact same key and SIP login. The endpoint checks the
+     (key, SIP, integrationType) triple against how the widget was actually
+     registered, not just (key, SIP). An earlier version of this bridge used
+     `CRM`, which is why it failed even after the widget genuinely existed.
 
 3. Build the JsSIP config exactly as the widget does:
    - `sockets: [new JsSIP.WebSocketInterface("wss://" + domain + ":4443")]`
@@ -113,16 +123,34 @@ Zadarma's PBX exposes a REFER-to-room conferencing flow reachable through the
 WebRTC-key path is unconfirmed; investigate only after the single-call and
 second-call milestones are proven live.
 
-## Known unknowns going into the live test
+## Resolved during live testing
 
-- Does `get_webphone_data.php` work identically when called from a backend
-  process (no browser context, no Referer) as it does from
-  `my.zadarma.com` itself? Untested until `npm run verify:zadarma` is run
-  against a real account.
-- Does the resolved `domain` route correctly for the account's actual
-  datacenter, or is there a case where the wrong datacenter is picked and
-  registration silently fails or routes calls oddly?
+- **`get_webphone_data.php` works fine from a backend process** — no browser
+  context or Referer needed. Confirmed with a real account: `get_key` → `200`,
+  `get_webphone_data.php` → `200` with real credentials, once
+  `integrationType=site` was used (see above).
+- **Two real bugs were found and fixed by testing against the live API, not
+  by re-reading source:**
+  1. `sign.ts` was base64-encoding raw HMAC digest bytes instead of the
+     lowercase hex digest string — PHP's `hash_hmac()` returns hex by
+     default, so `base64_encode(hash_hmac(...))` in the PHP SDK was always
+     base64-encoding a hex string, not raw bytes. Fixed; regression-tested.
+  2. `signZadarmaRequest` always built the params into the URL query string,
+     even for `POST /v1/webrtc/create/` — Zadarma expects POST params in a
+     form-urlencoded body with no query string at all (confirmed against the
+     PHP SDK's `Client::call()`, which branches exactly on this). Fixed with
+     an explicit `httpMethod` parameter; regression-tested.
+- The resolved `domain` (e.g. `sipfr3.zadarma.com`) is **not** the registered
+  site domain (`egovoip-production.up.railway.app`) — it's the actual
+  media/SIP server for the account's datacenter. The registered domain is
+  only used to authorize the widget; it never appears in the WSS URI.
+
+## Known unknowns going into the Android live-call test
+
 - Is 580s a safe register interval on real carrier NAT, or does it need to be
   shorter to survive more aggressive connection tracking timeouts?
+- Does this resolved `domain`/credential set stay stable across repeated
+  `get_key` calls, or can it change (e.g. a different datacenter) between
+  requests?
 
 These get answered by the live test, not by further reading.

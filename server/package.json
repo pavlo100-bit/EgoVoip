@@ -1,0 +1,27 @@
+{
+  "name": "egovoip-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "verify:zadarma": "tsx src/scripts/verifyZadarmaCredentials.ts",
+    "diagnose:zadarma": "tsx src/scripts/diagnoseZadarmaAuth.ts",
+    "check:env": "tsx src/scripts/checkEnvHygiene.ts",
+    "test": "tsx --test src/zadarma/sign.test.ts"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.3"
+  }
+}

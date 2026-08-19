@@ -15,7 +15,7 @@ import type { AuthSession } from '../types';
 
 type Status = 'loading' | 'signedOut' | 'signedIn';
 
-interface AuthValue {
+export interface AuthValue {
   status: Status;
   session: AuthSession | null;
   error: string | null;
@@ -24,7 +24,10 @@ interface AuthValue {
   busy: boolean;
 }
 
-const AuthContext = createContext<AuthValue | null>(null);
+// Exported so PermanentCredentialAuthProvider (dev-mode only) can supply the
+// same context without RootNavigator/useAuth needing to know which provider
+// is active.
+export const AuthContext = createContext<AuthValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<Status>('loading');

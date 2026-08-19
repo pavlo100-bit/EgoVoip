@@ -6,8 +6,10 @@ import RootNavigator from './src/navigation/RootNavigator';
 import { colors } from './src/theme/theme';
 // TEMPORARY — see src/sip/permanentCredentialTest.ts. permanentCredentialTestEnabled
 // is only ever true when src/config/permanentSipTest.local.ts has a password
-// filled in locally; every normal build is completely unaffected.
-import PermanentCredentialTestScreen from './src/screens/PermanentCredentialTestScreen';
+// filled in locally; every normal build is completely unaffected. When active,
+// this renders the REAL dialer UI (RootNavigator) — same as production — just
+// authenticated via PermanentCredentialAuthProvider instead of the backend.
+import { PermanentCredentialAuthProvider } from './src/context/PermanentCredentialAuthProvider';
 import { permanentCredentialTestEnabled } from './src/sip/permanentCredentialTest';
 
 export default function App() {
@@ -15,7 +17,9 @@ export default function App() {
     return (
       <SafeAreaProvider>
         <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
-        <PermanentCredentialTestScreen />
+        <PermanentCredentialAuthProvider>
+          <RootNavigator />
+        </PermanentCredentialAuthProvider>
       </SafeAreaProvider>
     );
   }

@@ -1,6 +1,7 @@
-import React, { memo } from 'react';
+import React, { memo, useCallback } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { colors } from '../theme/theme';
+import { playKeypadTone } from '../native/dtmfTone';
 
 interface Key {
   digit: string;
@@ -33,6 +34,17 @@ interface Props {
 function KeypadBase({ onPress, onLongPressZero, compact }: Props) {
   const { width } = useWindowDimensions();
 
+  // Local key-press feedback tone only — separate from whatever `onPress`
+  // does (append a digit locally, or send real SIP DTMF in-call). Fires
+  // immediately and never blocks/delays the actual press handling below.
+  const handlePress = useCallback(
+    (digit: string) => {
+      playKeypadTone(digit);
+      onPress(digit);
+    },
+    [onPress],
+  );
+
   // Responsive sizing: 3 keys per row with generous gaps, clamped so it
   // stays large on a normal phone width without overflowing a small one.
   const gap = compact ? 16 : 20;
@@ -53,7 +65,7 @@ function KeypadBase({ onPress, onLongPressZero, compact }: Props) {
               key={digit}
               accessibilityRole="button"
               accessibilityLabel={`Dial ${digit}`}
-              onPress={() => onPress(digit)}
+              onPress={() => handlePress(digit)}
               onLongPress={digit === '0' ? onLongPressZero : undefined}
               style={({ pressed }) => [
                 styles.key,

@@ -231,6 +231,7 @@ class SipEngine extends Emitter {
       mediaConstraints: { audio: true, video: false },
       pcConfig: { iceServers: this.iceServers() },
       sessionTimersExpires: 120,
+      eventHandlers: buildIceGatheringEventHandlers(),
     });
 
     // JsSIP fires 'newRTCSession' synchronously inside ua.call(), so the record
@@ -611,6 +612,73 @@ class SipEngine extends Emitter {
  */
 function startRingtone(): void {
   InCallManager.startRingtone('_BUNDLE_', [0, 1000, 800], 'playback', 30);
+}
+
+/**
+ * Without this, JsSIP waits for connection.iceGatheringState === 'complete'
+ * before finalizing the SDP offer and sending the INVITE at all (confirmed by
+ * reading RTCSession.js's _createLocalDescription) — measured on a real
+ * device at ~40 seconds with only a public STUN server configured, almost
+ * certainly STUN requests being dropped/retried repeatedly over a cellular
+ * network before gathering ever reaches 'complete'.
+ *
+ * JsSIP exposes exactly this escape hatch itself: the 'icecandidate' event
+ * carries a `ready` callback that finalizes the SDP with whatever candidates
+ * have been found so far — the same code path JsSIP uses internally when
+ * gathering completes naturally (RTCSession.js's `ready()`, idempotent via
+ * an internal `finished` guard, so calling it early is always safe even if
+ * natural completion fires around the same time).
+ *
+ * 2000ms was chosen, not "shortened blindly": a normal STUN round trip
+ * typically resolves in well under a second, so this leaves 2-4x margin over
+ * the successful case while capping the pathological one far below the
+ * observed 40s. Host candidates (no network round trip) are always available
+ * immediately regardless, so a forced-early SDP is never candidate-less.
+ *
+ * A real TURN server remains the actual long-term fix — this only bounds the
+ * wait, it doesn't address *why* STUN is slow/unreachable on this network.
+ * No TURN credentials are available to add one right now (see ENV.ICE_SERVERS
+ * in src/config/env.ts).
+ */
+const ICE_GATHERING_TIMEOUT_MS = 2000;
+
+function buildIceGatheringEventHandlers() {
+  let readyFn: (() => void) | null = null;
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+
+  return {
+    peerconnection: (e: { peerconnection: RTCPeerConnectionLike }) => {
+      const pc = e.peerconnection;
+      logCallEvent('ICE gatheringstate', pc.iceGatheringState);
+      pc.addEventListener('icegatheringstatechange', () => {
+        logCallEvent('ICE gatheringstate', pc.iceGatheringState);
+        if (pc.iceGatheringState === 'complete' && timeoutHandle) {
+          clearTimeout(timeoutHandle);
+          timeoutHandle = null;
+        }
+      });
+    },
+    icecandidate: (e: { candidate?: { type?: string }; ready: () => void }) => {
+      if (e.candidate) {
+        // Type only (host/srflx/relay) — never the IP or full candidate string.
+        logCallEvent('ICE candidate found', `type: ${e.candidate.type ?? 'unknown'}`);
+      }
+      if (!readyFn) {
+        readyFn = e.ready;
+        timeoutHandle = setTimeout(() => {
+          logCallEvent(
+            `ICE gathering timeout (${ICE_GATHERING_TIMEOUT_MS}ms) — proceeding with available candidates`,
+          );
+          readyFn?.();
+        }, ICE_GATHERING_TIMEOUT_MS);
+      }
+    },
+  };
+}
+
+interface RTCPeerConnectionLike {
+  iceGatheringState: string;
+  addEventListener(event: 'icegatheringstatechange', listener: () => void): void;
 }
 
 function toView(record: CallRecord): CallView {

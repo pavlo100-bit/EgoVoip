@@ -13,11 +13,26 @@ import { useCallDuration } from '../hooks/useCallDuration';
 import { useSip } from '../hooks/useSip';
 import { sipEngine } from '../sip/SipEngine';
 import { colors, formatDuration, spacing } from '../theme/theme';
-import type { CallView } from '../types';
+import type { CallStatus, CallView } from '../types';
 
 interface Props {
   /** Push a second dialer on top of the call, for Add Call. */
   onAddCall: () => void;
+}
+
+function secondaryStatusLabel(status: CallStatus): string {
+  switch (status) {
+    case 'held':
+      return 'בהמתנה';
+    case 'active':
+      return 'פעילה';
+    case 'ringing':
+      return 'מצלצלת';
+    case 'connecting':
+      return 'מתחברת';
+    case 'ended':
+      return 'הסתיימה';
+  }
 }
 
 export default function ActiveCallScreen({ onAddCall }: Props) {
@@ -59,7 +74,7 @@ export default function ActiveCallScreen({ onAddCall }: Props) {
     return (
       <SafeAreaView style={styles.root}>
         <View style={styles.center}>
-          <Text style={styles.status}>Call ended</Text>
+          <Text style={styles.status}>השיחה הסתיימה</Text>
         </View>
       </SafeAreaView>
     );
@@ -73,15 +88,15 @@ export default function ActiveCallScreen({ onAddCall }: Props) {
   const statusLabel =
     primary.status === 'active'
       ? conference
-        ? `Conference · ${formatDuration(elapsed)}`
+        ? `ועידה · ${formatDuration(elapsed)}`
         : formatDuration(elapsed)
       : primary.status === 'ringing'
       ? primary.direction === 'outbound'
-        ? 'Ringing…'
-        : 'Incoming'
+        ? 'מצלצל…'
+        : 'שיחה נכנסת'
       : primary.status === 'held'
-      ? 'On hold'
-      : 'Calling…';
+      ? 'בהמתנה'
+      : 'מתקשר…';
 
   return (
     <SafeAreaView style={styles.root}>
@@ -97,9 +112,9 @@ export default function ActiveCallScreen({ onAddCall }: Props) {
         {secondary ? (
           <Pressable style={styles.secondaryBar} onPress={() => sipEngine.swap()}>
             <Text style={styles.secondaryText} numberOfLines={1}>
-              {secondary.remoteName} · {secondary.status === 'held' ? 'on hold' : secondary.status}
+              {secondary.remoteName} · {secondaryStatusLabel(secondary.status)}
             </Text>
-            <Text style={styles.secondaryAction}>SWAP</Text>
+            <Text style={styles.secondaryAction}>החלף</Text>
           </Pressable>
         ) : null}
 
@@ -115,37 +130,37 @@ export default function ActiveCallScreen({ onAddCall }: Props) {
             <Pressable
               style={styles.hideKeypad}
               onPress={() => setDtmfOpen(false)}>
-              <Text style={styles.hideKeypadText}>Hide</Text>
+              <Text style={styles.hideKeypadText}>הסתר</Text>
             </Pressable>
           </>
         ) : (
           <View style={[styles.actionGrid, height < 700 && styles.actionGridTight]}>
             <ActionButton
-              label={primary.muted ? 'Unmute' : 'Mute'}
+              label={primary.muted ? 'בטל השתקה' : 'השתק'}
               glyph="🎙"
               active={primary.muted}
               onPress={() => sipEngine.toggleMute(primary.id)}
             />
             <ActionButton
-              label="Keypad"
+              label="לוח מקשים"
               glyph="⌨"
               onPress={() => setDtmfOpen(true)}
             />
             <ActionButton
-              label="Speaker"
+              label="רמקול"
               glyph="🔊"
               active={speakerOn}
               onPress={() => sipEngine.toggleSpeaker()}
             />
 
             <ActionButton
-              label="Add call"
+              label="הוסף שיחה"
               glyph="＋"
               disabled={calls.length >= 2}
               onPress={onAddCall}
             />
             <ActionButton
-              label={primary.status === 'held' ? 'Resume' : 'Hold'}
+              label={primary.status === 'held' ? 'המשך' : 'השהה'}
               glyph="⏸"
               active={primary.status === 'held'}
               disabled={primary.status !== 'active' && primary.status !== 'held'}
@@ -156,7 +171,7 @@ export default function ActiveCallScreen({ onAddCall }: Props) {
               }
             />
             <ActionButton
-              label="Merge"
+              label="מזג שיחות"
               glyph="⇄"
               disabled={!canMerge}
               onPress={() => guard(() => sipEngine.merge())}
@@ -168,11 +183,12 @@ export default function ActiveCallScreen({ onAddCall }: Props) {
       <View style={styles.footer}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="End call"
+          accessibilityLabel="סיום שיחה"
           style={({ pressed }) => [styles.hangup, pressed && styles.hangupPressed]}
           onPress={() => sipEngine.hangup(primary.id)}>
           <Text style={styles.hangupGlyph}>✕</Text>
         </Pressable>
+        <Text style={styles.hangupLabel}>סיום שיחה</Text>
       </View>
     </SafeAreaView>
   );
@@ -225,7 +241,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   name: { color: colors.text, fontSize: 30, fontWeight: '600' },
-  number: { color: colors.textMuted, fontSize: 16, marginTop: spacing(0.5) },
+  // Phone numbers must always read left-to-right, even under Hebrew/RTL locale.
+  number: { color: colors.textMuted, fontSize: 16, marginTop: spacing(0.5), writingDirection: 'ltr' },
   status: { color: colors.textMuted, fontSize: 16, marginTop: spacing(1.5) },
   secondaryBar: {
     flexDirection: 'row',
@@ -252,6 +269,7 @@ const styles = StyleSheet.create({
     fontSize: 22,
     letterSpacing: 3,
     marginTop: spacing(2),
+    writingDirection: 'ltr',
   },
   controls: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   actionGrid: {
@@ -278,7 +296,7 @@ const styles = StyleSheet.create({
   actionCircleDisabled: { opacity: 0.35 },
   actionGlyph: { fontSize: 26, color: colors.text },
   actionGlyphActive: { color: colors.bg },
-  actionLabel: { color: colors.textMuted, fontSize: 13, marginTop: spacing(1) },
+  actionLabel: { color: colors.textMuted, fontSize: 13, marginTop: spacing(1), textAlign: 'center' },
   actionLabelDisabled: { opacity: 0.4 },
   hideKeypad: { marginTop: spacing(2), padding: spacing(1.5) },
   hideKeypadText: { color: colors.accent, fontSize: 16 },
@@ -293,4 +311,5 @@ const styles = StyleSheet.create({
   },
   hangupPressed: { opacity: 0.75 },
   hangupGlyph: { color: '#fff', fontSize: 30, fontWeight: '600' },
+  hangupLabel: { color: colors.textMuted, fontSize: 13, marginTop: spacing(1) },
 });

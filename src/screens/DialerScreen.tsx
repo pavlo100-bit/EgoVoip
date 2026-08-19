@@ -58,7 +58,11 @@ export default function DialerScreen({ initialNumber = '', onCallStarted }: Prop
       <RegistrationBanner />
 
       <View style={styles.display}>
-        <Text style={styles.number} numberOfLines={1} adjustsFontSizeToFit>
+        <Text
+          style={styles.number}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.5}>
           {number}
         </Text>
       </View>
@@ -68,7 +72,18 @@ export default function DialerScreen({ initialNumber = '', onCallStarted }: Prop
       </View>
 
       <View style={styles.actions}>
-        <View style={styles.sideSlot} />
+        <View style={styles.sideSlot}>
+          {number.length > 0 ? (
+            <Pressable
+              accessibilityLabel="Delete last digit"
+              onPress={() => setNumber(prev => prev.slice(0, -1))}
+              onLongPress={() => setNumber('')}
+              hitSlop={16}
+              style={({ pressed }) => [styles.backspaceHit, pressed && styles.pressedSubtle]}>
+              <Text style={styles.backspace}>⌫</Text>
+            </Pressable>
+          ) : null}
+        </View>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Call"
@@ -76,17 +91,7 @@ export default function DialerScreen({ initialNumber = '', onCallStarted }: Prop
           style={({ pressed }) => [styles.callBtn, pressed && styles.pressed]}>
           <Text style={styles.callGlyph}>📞</Text>
         </Pressable>
-        <View style={styles.sideSlot}>
-          {number.length > 0 ? (
-            <Pressable
-              accessibilityLabel="Delete last digit"
-              onPress={() => setNumber(prev => prev.slice(0, -1))}
-              onLongPress={() => setNumber('')}
-              hitSlop={12}>
-              <Text style={styles.backspace}>⌫</Text>
-            </Pressable>
-          ) : null}
-        </View>
+        <View style={styles.sideSlot} />
       </View>
     </SafeAreaView>
   );
@@ -118,31 +123,53 @@ const styles = StyleSheet.create({
   bannerError: { backgroundColor: colors.red },
   bannerText: { color: '#fff', fontSize: 13, textAlign: 'center' },
   display: {
-    minHeight: 96,
+    minHeight: 110,
     justifyContent: 'flex-end',
     alignItems: 'center',
     paddingHorizontal: spacing(3),
-    paddingBottom: spacing(2),
+    paddingBottom: spacing(3),
   },
-  number: { color: colors.text, fontSize: 38, letterSpacing: 1 },
+  number: {
+    color: colors.text,
+    fontSize: 44,
+    fontWeight: '300',
+    letterSpacing: 1.5,
+    textAlign: 'center',
+    // Phone numbers must always read left-to-right, even under Hebrew/RTL
+    // locale — a dialed digit string is never RTL text.
+    writingDirection: 'ltr',
+  },
   keypadWrap: { alignItems: 'center' },
   actions: {
     flexDirection: 'row',
+    direction: 'ltr', // call button stays centered, backspace stays on the right, regardless of locale
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: spacing(2),
-    paddingBottom: spacing(2),
+    paddingTop: spacing(4),
+    paddingBottom: spacing(3),
   },
-  sideSlot: { width: 92, alignItems: 'center' },
+  sideSlot: { width: 96, alignItems: 'center' },
   callBtn: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 84,
+    height: 84,
+    borderRadius: 42,
     backgroundColor: colors.green,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: colors.green,
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
   },
   pressed: { opacity: 0.75 },
-  callGlyph: { fontSize: 30 },
-  backspace: { color: colors.textMuted, fontSize: 26 },
+  pressedSubtle: { opacity: 0.5 },
+  callGlyph: { fontSize: 34 },
+  backspaceHit: {
+    width: 52,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backspace: { color: colors.textMuted, fontSize: 28 },
 });

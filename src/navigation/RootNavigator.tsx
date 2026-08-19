@@ -78,17 +78,17 @@ function SignedInApp() {
         <Tab.Screen
           name="Recents"
           component={RecentsTab}
-          options={{ tabBarIcon: RecentsIcon }}
+          options={{ tabBarLabel: 'אחרונות', tabBarIcon: RecentsIcon }}
         />
         <Tab.Screen
           name="Dialer"
           component={DialerTab}
-          options={{ tabBarIcon: DialerIcon }}
+          options={{ tabBarLabel: 'חייגן', tabBarIcon: DialerIcon }}
         />
         <Tab.Screen
           name="Contacts"
           component={ContactsTab}
-          options={{ tabBarIcon: ContactsIcon }}
+          options={{ tabBarLabel: 'אנשי קשר', tabBarIcon: ContactsIcon }}
         />
       </Tab.Navigator>
     </NavigationContainer>

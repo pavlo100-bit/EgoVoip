@@ -131,6 +131,33 @@ second-call/Add-call is exercised.
    the login response.
 4. **Codec/DTMF negotiation** is left to the PBX defaults. Force Opus and check
    the PBX actually negotiated RFC 2833 if IVR digits misbehave.
+5. **Dialer UI cleanup pass — not started, deliberately deferred.** Reported
+   on a real Android device: the keypad layout renders visually wrong/reversed,
+   not matching a standard phone dialer. Not blocking the current SIP/ICE
+   timing work, so intentionally left alone rather than mixed into that fix.
+   Scope for the pass, once outbound call latency is confirmed fixed and a
+   real call is stable:
+   - Standard keypad layout (1 2 3 / 4 5 6 / 7 8 9 / 0), corrected from
+     whatever's producing the reversed layout now
+   - Correct RTL/LTR handling — the keypad itself must never mirror under
+     Hebrew locale/RTL layout direction (likely needs explicit
+     `writingDirection`/`I18nManager` handling in `Keypad.tsx`, since RN's
+     default RTL flip applies to Flexbox layout order and would reverse a
+     numeric grid that must stay LTR regardless of locale)
+   - `+` support for international dialing (already present in
+     `toSipUri()`/long-press-0 in `DialerScreen.tsx` — confirm the UI affordance
+     for entering it is discoverable, not just functional)
+   - Backspace/delete (already implemented — confirm it survives the layout
+     fix)
+   - Large, touch-friendly call button
+   - Consistent spacing/alignment across the keypad grid
+   - Number display above the keypad (already present — revisit as part of
+     the same pass for consistency)
+   - Recents/Dialer/Contacts tabs polished for normal end-user use, not just
+     functional correctness
+   Touches `src/components/Keypad.tsx`, `src/screens/DialerScreen.tsx`, and
+   likely `src/screens/ContactsScreen.tsx`/`src/screens/HistoryScreen.tsx` for
+   the tab-polish scope. No code changed yet — documentation only.
 
 ## Build
 

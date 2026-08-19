@@ -23,6 +23,10 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Phase 3a POC — SipKeepAliveService. Required in addition to the base
+         FOREGROUND_SERVICE permission above for the specialUse type. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
     <!-- Turn the screen on for an incoming call -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
@@ -60,5 +64,21 @@
             <data android:scheme="tel" />
         </intent-filter>
       </activity>
+
+      <!-- Phase 3a POC — empirically testing whether a correctly-typed
+           foreground service keeps the existing JsSIP WebSocket/REGISTER
+           alive through background/lock/swipe-away. Not the final production
+           architecture (see ARCHITECTURE.md) — specifically, this does not
+           yet cover Core-Telecom/CallStyle/full-screen-intent, which govern
+           whether an incoming call is presented well on a *locked* screen;
+           this phase only tests whether the SIP session itself survives. -->
+      <service
+        android:name=".SipKeepAliveService"
+        android:exported="false"
+        android:foregroundServiceType="specialUse">
+        <property
+          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+          android:value="Maintains SIP registration so the app can receive incoming VoIP calls while backgrounded" />
+      </service>
     </application>
 </manifest>

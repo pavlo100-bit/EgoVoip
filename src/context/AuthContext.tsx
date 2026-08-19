@@ -11,6 +11,9 @@ import * as api from '../api/backend';
 import { clearSession, loadSession, saveSession } from '../storage/secureStore';
 import { sipEngine } from '../sip/SipEngine';
 import { callHistory } from '../storage/callHistory';
+// TEMPORARY — Phase 3a foreground-keep-alive-service investigation. Remove
+// alongside SipKeepAliveService once Phase 3a's result is known.
+import { startKeepAlive, stopKeepAlive } from '../native/sipKeepAlive';
 import type { AuthSession } from '../types';
 
 type Status = 'loading' | 'signedOut' | 'signedIn';
@@ -56,7 +59,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (restored) {
         setSession(restored);
         setStatus('signedIn');
-        sipEngine.start(restored.sip).catch(e => setError(String(e)));
+        sipEngine
+          .start(restored.sip)
+          .then(() => startKeepAlive())
+          .catch(e => setError(String(e)));
       } else {
         setStatus('signedOut');
       }
@@ -82,6 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(updated);
         await saveSession(updated);
         await sipEngine.start(sip);
+        startKeepAlive();
       } catch (e) {
         if (e instanceof api.ApiError && (e.status === 401 || e.status === 403)) {
           await doSignOut();
@@ -103,6 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(next);
       setStatus('signedIn');
       await sipEngine.start(next.sip);
+      startKeepAlive();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Sign-in failed');
       throw e;
@@ -112,6 +120,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const doSignOut = useCallback(async () => {
+    stopKeepAlive();
     await sipEngine.stop();
     await clearSession();
     setSession(null);

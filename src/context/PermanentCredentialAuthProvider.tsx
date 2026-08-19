@@ -26,6 +26,9 @@ import { AuthContext, type AuthValue } from './AuthContext';
 import { sipEngine } from '../sip/SipEngine';
 import { callHistory } from '../storage/callHistory';
 import { startPermanentCredentialTest } from '../sip/permanentCredentialTest';
+// TEMPORARY — Phase 3a foreground-keep-alive-service investigation. Remove
+// alongside SipKeepAliveService once Phase 3a's result is known.
+import { startKeepAlive, stopKeepAlive } from '../native/sipKeepAlive';
 
 export function PermanentCredentialAuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -33,6 +36,12 @@ export function PermanentCredentialAuthProvider({ children }: { children: React.
     callHistory.load();
     sipEngine.onCallEnded = info => callHistory.record(info);
     startPermanentCredentialTest();
+    // This provider treats "test session started" as synonymous with
+    // "signed in" (status below is hardcoded 'signedIn' regardless of actual
+    // REGISTER outcome), so start the keep-alive service here on the same
+    // basis rather than threading a registration-success callback through
+    // startPermanentCredentialTest().
+    startKeepAlive();
     return () => {
       sipEngine.onCallEnded = null;
     };
@@ -46,6 +55,7 @@ export function PermanentCredentialAuthProvider({ children }: { children: React.
       throw new Error('Permanent-credential dev mode does not support manual sign-in');
     },
     signOut: async () => {
+      stopKeepAlive();
       await sipEngine.stop();
     },
     busy: false,

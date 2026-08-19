@@ -1,3 +1,4 @@
+import { AppState } from 'react-native';
 import JsSIP from 'jssip';
 import InCallManager from 'react-native-incall-manager';
 import { ENV } from '../config/env';
@@ -127,6 +128,7 @@ class SipEngine extends Emitter {
     // 200 OK to that REGISTER.
     this.ua.on('connected', () => {
       console.log('[sip-diag] WebSocket connected — sending REGISTER next');
+      console.log('[keepalive-diag] WebSocket connected');
     });
 
     this.ua.on('disconnected', (e: any) => {
@@ -134,6 +136,7 @@ class SipEngine extends Emitter {
         '[sip-diag] WebSocket disconnected. error:', !!e?.error,
         'code:', e?.code, 'reason:', e?.reason ?? '(none)',
       );
+      console.log('[keepalive-diag] WebSocket disconnected. error:', !!e?.error, 'reason:', e?.reason ?? '(none)');
       this.registration = 'failed';
       this.registrationError = e?.error
         ? `Transport error: ${e.reason ?? 'websocket closed'}`
@@ -147,6 +150,7 @@ class SipEngine extends Emitter {
         '[sip-diag] REGISTER succeeded. status:', resp?.status_code,
         resp?.reason_phrase, '| Expires:', resp?.getHeader?.('Expires') ?? '(none)',
       );
+      console.log('[keepalive-diag] REGISTER succeeded (status', resp?.status_code, ')');
       this.registration = 'registered';
       this.registrationError = null;
       this.publish();
@@ -805,3 +809,12 @@ export const sipEngine = new SipEngine();
 // singleton that would otherwise persist for the life of the JS context.
 // Remove alongside the other REGISTER-401 diagnostics once resolved.
 console.log('[sip-diag] SipEngine module evaluated at', Date.now());
+
+// TEMPORARY — Phase 3a foreground-keep-alive-service investigation. Module-
+// level so it's active regardless of which auth provider (real backend flow
+// or the permanent-credential dev/test flow) is running, without needing to
+// duplicate this listener in both. Remove alongside SipKeepAliveService once
+// Phase 3a's result is known.
+AppState.addEventListener('change', (state) => {
+  console.log('[keepalive-diag] JS AppState changed to', state);
+});

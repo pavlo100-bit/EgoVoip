@@ -1,28 +1,38 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { sipEngine } from '../sip/SipEngine';
 import { ensureCallPermissions } from '../permissions/permissions';
+import { logIncoming } from '../sip/incomingCallDiagnostics';
 import { colors, spacing } from '../theme/theme';
 import type { CallView } from '../types';
 
 export default function IncomingCallScreen({ call }: { call: CallView }) {
+  useEffect(() => {
+    logIncoming('incoming UI shown', `callId: ${call.id}`);
+  }, [call.id]);
+
   const accept = useCallback(async () => {
+    logIncoming('Answer pressed', `callId: ${call.id}`);
     // The mic prompt can only appear once the app is foregrounded, so a call
     // answered from a cold start still has to pass through here.
     const { ok } = await ensureCallPermissions();
     if (!ok) {
-      Alert.alert('Microphone required', 'EgoVoip cannot answer without the microphone.');
+      Alert.alert('נדרשת גישה למיקרופון', 'לא ניתן לענות לשיחה ללא גישה למיקרופון.');
       sipEngine.reject(call.id);
       return;
     }
     sipEngine.answer(call.id);
   }, [call.id]);
 
+  const reject = useCallback(() => {
+    sipEngine.reject(call.id);
+  }, [call.id]);
+
   return (
     <SafeAreaView style={styles.root}>
       <View style={styles.info}>
-        <Text style={styles.label}>Incoming call</Text>
+        <Text style={styles.label}>שיחה נכנסת</Text>
         <Text style={styles.name} numberOfLines={1}>
           {call.remoteName}
         </Text>
@@ -32,13 +42,8 @@ export default function IncomingCallScreen({ call }: { call: CallView }) {
       </View>
 
       <View style={styles.actions}>
-        <Action
-          label="Decline"
-          glyph="✕"
-          color={colors.red}
-          onPress={() => sipEngine.reject(call.id)}
-        />
-        <Action label="Accept" glyph="📞" color={colors.green} onPress={accept} />
+        <Action label="דחה" glyph="✕" color={colors.red} onPress={reject} />
+        <Action label="ענה" glyph="📞" color={colors.green} onPress={accept} />
       </View>
     </SafeAreaView>
   );
@@ -87,7 +92,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: spacing(1.5),
   },
-  number: { color: colors.textMuted, fontSize: 17, marginTop: spacing(0.5) },
+  // Phone numbers must always read left-to-right, even under Hebrew/RTL
+  // locale — a caller ID number is never RTL text. The caller *name* above
+  // is left unforced since it may legitimately be Hebrew.
+  number: { color: colors.textMuted, fontSize: 17, marginTop: spacing(0.5), writingDirection: 'ltr' },
   actions: {
     flexDirection: 'row',
     justifyContent: 'space-evenly',

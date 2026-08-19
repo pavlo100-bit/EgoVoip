@@ -5,6 +5,9 @@ import { Emitter } from './emitter';
 // TEMPORARY — outbound call setup timing investigation. Remove alongside
 // src/sip/callTimingDiagnostics.ts once resolved.
 import { logCallEvent } from './callTimingDiagnostics';
+// TEMPORARY — foreground incoming-call investigation. Remove alongside
+// src/sip/incomingCallDiagnostics.ts once resolved.
+import { logIncoming } from './incomingCallDiagnostics';
 import type {
   CallDirection,
   CallStatus,
@@ -250,6 +253,12 @@ class SipEngine extends Emitter {
       e.originator === 'remote' ? 'inbound' : 'outbound';
 
     if (direction === 'outbound') logCallEvent('RTCSession created', 'originator: local');
+    if (direction === 'inbound') {
+      logIncoming(
+        'incoming RTCSession received',
+        `from: ${session.remote_identity?.uri?.user ?? 'unknown'}`,
+      );
+    }
 
     // Busy: one leg in reserve is fine, two is not.
     if (direction === 'inbound' && this.calls.size >= MAX_CALLS) {
@@ -312,12 +321,14 @@ class SipEngine extends Emitter {
 
     session.on('accepted', () => {
       if (record.direction === 'outbound') logCallEvent('RTCSession "accepted"');
+      if (record.direction === 'inbound') logIncoming('session accepted');
       InCallManager.stopRingback();
       InCallManager.stopRingtone();
     });
 
     session.on('confirmed', () => {
       if (record.direction === 'outbound') logCallEvent('RTCSession "confirmed" (call fully established)');
+      if (record.direction === 'inbound') logIncoming('session confirmed (call fully established)');
       const r = this.calls.get(id);
       if (!r) return;
       r.status = 'active';
@@ -344,22 +355,42 @@ class SipEngine extends Emitter {
       this.publish();
     });
 
-    const finish = (e: any) => {
+    const finish = (jssipEvent: 'ended' | 'failed') => (e: any) => {
       if (record.direction === 'outbound') logCallEvent('call ended/failed', `cause: ${e?.cause ?? '(none)'}`);
+      if (record.direction === 'inbound') {
+        logIncoming(
+          `session ${jssipEvent}`,
+          `originator: ${e?.originator ?? 'unknown'}, cause: ${e?.cause ?? '(none)'}`,
+        );
+        if (e?.originator === 'remote') logIncoming('remote hangup');
+      }
       this.finalize(id, e?.cause);
     };
-    session.on('ended', finish);
-    session.on('failed', finish);
+    session.on('ended', finish('ended'));
+    session.on('failed', finish('failed'));
   }
 
   answer(callId: string): void {
     const record = this.calls.get(callId);
     if (!record || record.direction !== 'inbound') return;
+    logIncoming('Answer pressed', `callId: ${callId}`);
 
     // Answering with another call up: hold the other leg first.
     for (const other of this.calls.values()) {
       if (other.id !== callId && other.status === 'active') this.hold(other.id);
     }
+
+    // Same fix as outbound calls (see buildIceGatheringEventHandlers' own
+    // comment for the full explanation): _createLocalDescription() is the
+    // same function for both the offer (outbound) and answer (inbound) SDP,
+    // so answering would otherwise wait for full ICE gathering — up to ~40s —
+    // before the 200 OK (SDP answer) is even sent, leaving the caller
+    // hearing nothing after the user already tapped Answer. answer() itself
+    // doesn't read an `eventHandlers` option the way connect() does, so the
+    // handlers are attached directly via .on() instead — identical effect.
+    const iceHandlers = buildIceGatheringEventHandlers();
+    record.session.on('peerconnection', iceHandlers.peerconnection);
+    record.session.on('icecandidate', iceHandlers.icecandidate);
 
     InCallManager.stopRingtone();
     record.session.answer({
@@ -373,6 +404,7 @@ class SipEngine extends Emitter {
   reject(callId: string): void {
     const record = this.calls.get(callId);
     if (!record) return;
+    logIncoming('Reject pressed', `callId: ${callId}`);
     InCallManager.stopRingtone();
     try {
       record.session.terminate({ status_code: 486, reason_phrase: 'Busy Here' });
@@ -557,6 +589,7 @@ class SipEngine extends Emitter {
     // over any automatic Bluetooth/headset heuristic, so this only fixes the
     // device-list population — it doesn't add unwanted auto-switching.
     console.log('[sip-call-diag][speaker] InCallManager.start({ media: "audio", auto: true })');
+    logIncoming('audio session started');
     InCallManager.start({ media: 'audio', auto: true });
     InCallManager.setForceSpeakerphoneOn(this.speakerOn);
     this.audioSessionOpen = true;
@@ -564,6 +597,7 @@ class SipEngine extends Emitter {
 
   private closeAudioSession(): void {
     if (!this.audioSessionOpen) return;
+    logIncoming('audio session stopped');
     InCallManager.stopRingback();
     InCallManager.stopRingtone();
     InCallManager.stop();

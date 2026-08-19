@@ -420,6 +420,15 @@ class SipEngine extends Emitter {
    * to whichever leg currently owns the audio session.
    */
   setSpeaker(on: boolean): void {
+    // TEMPORARY — speaker-routing investigation. react-native-incall-manager
+    // has no JS API to read back the native AudioManager route, so this logs
+    // our *requested* state only, clearly labeled as such — not confirmation
+    // the native side actually applied it.
+    console.log(
+      '[sip-call-diag][speaker] button pressed | requested route:',
+      on ? 'SPEAKER' : 'EARPIECE',
+      '| InCallManager.setForceSpeakerphoneOn(', on, ')',
+    );
     InCallManager.setForceSpeakerphoneOn(on);
     this.speakerOn = on;
     this.publish();
@@ -529,8 +538,26 @@ class SipEngine extends Emitter {
 
   private openAudioSession(): void {
     if (this.audioSessionOpen) return;
-    // auto:false — we drive ringback/ringtone explicitly above.
-    InCallManager.start({ media: 'audio', auto: false });
+    // MUST be auto:true. Confirmed by reading InCallManagerModule.java: `auto`
+    // maps directly to `automatic`, which gates updateAudioRoute() into a
+    // no-op when false — meaning updateAudioDeviceState() (the function that
+    // populates the native `audioDevices` set) never runs. Every future
+    // selectAudioDevice() call — including our own setForceSpeakerphoneOn()
+    // whenever the user presses Speaker — then silently fails its
+    // `audioDevices.contains(device)` guard and returns without changing the
+    // route, logged only as a native Log.e the JS side never sees. This is
+    // NOT about ringback/ringtone (that's the fully separate `ringback`
+    // start() option, unused here since we call startRingback()/startRingtone()
+    // ourselves) — auto:false was a reasonable-sounding but incorrect guess at
+    // what this option does.
+    //
+    // auto:true does not fight explicit route choices: getPreferredAudioDevice()
+    // in the native module gives absolute priority to `userSelectedAudioDevice`
+    // (set by selectAudioDevice(), i.e. every setForceSpeakerphoneOn() call)
+    // over any automatic Bluetooth/headset heuristic, so this only fixes the
+    // device-list population — it doesn't add unwanted auto-switching.
+    console.log('[sip-call-diag][speaker] InCallManager.start({ media: "audio", auto: true })');
+    InCallManager.start({ media: 'audio', auto: true });
     InCallManager.setForceSpeakerphoneOn(this.speakerOn);
     this.audioSessionOpen = true;
   }

@@ -2,6 +2,9 @@ import JsSIP from 'jssip';
 import InCallManager from 'react-native-incall-manager';
 import { ENV } from '../config/env';
 import { Emitter } from './emitter';
+// TEMPORARY — outbound call setup timing investigation. Remove alongside
+// src/sip/callTimingDiagnostics.ts once resolved.
+import { logCallEvent } from './callTimingDiagnostics';
 import type {
   CallDirection,
   CallStatus,
@@ -216,12 +219,14 @@ class SipEngine extends Emitter {
 
     const uri = toSipUri(target, this.credentials.domain);
     if (!uri) throw new Error('Enter a number to call');
+    logCallEvent('destination normalized', `uri: ${uri}`);
 
     // Any existing call must go on hold before a second leg opens the mic.
     for (const record of this.calls.values()) {
       if (record.status === 'active') this.hold(record.id);
     }
 
+    logCallEvent('calling ua.call()');
     const session = this.ua.call(uri, {
       mediaConstraints: { audio: true, video: false },
       pcConfig: { iceServers: this.iceServers() },
@@ -242,6 +247,8 @@ class SipEngine extends Emitter {
     const session = e.session;
     const direction: CallDirection =
       e.originator === 'remote' ? 'inbound' : 'outbound';
+
+    if (direction === 'outbound') logCallEvent('RTCSession created', 'originator: local');
 
     // Busy: one leg in reserve is fine, two is not.
     if (direction === 'inbound' && this.calls.size >= MAX_CALLS) {
@@ -281,9 +288,21 @@ class SipEngine extends Emitter {
   private attachSessionHandlers(record: CallRecord): void {
     const { session, id } = record;
 
-    session.on('progress', () => {
+    if (record.direction === 'outbound') {
+      // TEMPORARY — fires right before request_sender.send(), i.e. the exact
+      // moment the INVITE hands off to the transport. Cross-checks the
+      // RequestSender-level "INVITE sent (initial)" log in
+      // callTimingDiagnostics.ts — they should land within ~0ms of each other.
+      session.on('sending', () => logCallEvent('RTCSession "sending" (INVITE handed to transport)'));
+    }
+
+    session.on('progress', ({ response }: { response?: { status_code?: number; reason_phrase?: string } }) => {
       const r = this.calls.get(id);
       if (!r || r.direction !== 'outbound') return;
+      logCallEvent(
+        'RTCSession "progress" (status set to ringing)',
+        response ? `status: ${response.status_code} ${response.reason_phrase ?? ''}`.trim() : undefined,
+      );
       r.status = 'ringing';
       this.openAudioSession();
       InCallManager.startRingback('_BUNDLE_');
@@ -291,11 +310,13 @@ class SipEngine extends Emitter {
     });
 
     session.on('accepted', () => {
+      if (record.direction === 'outbound') logCallEvent('RTCSession "accepted"');
       InCallManager.stopRingback();
       InCallManager.stopRingtone();
     });
 
     session.on('confirmed', () => {
+      if (record.direction === 'outbound') logCallEvent('RTCSession "confirmed" (call fully established)');
       const r = this.calls.get(id);
       if (!r) return;
       r.status = 'active';
@@ -322,7 +343,10 @@ class SipEngine extends Emitter {
       this.publish();
     });
 
-    const finish = (e: any) => this.finalize(id, e?.cause);
+    const finish = (e: any) => {
+      if (record.direction === 'outbound') logCallEvent('call ended/failed', `cause: ${e?.cause ?? '(none)'}`);
+      this.finalize(id, e?.cause);
+    };
     session.on('ended', finish);
     session.on('failed', finish);
   }

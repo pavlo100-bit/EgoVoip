@@ -7,6 +7,8 @@
 import './src/sip/polyfills';
 // TEMPORARY — investigating the REGISTER 401 issue. Remove once resolved.
 import './src/sip/digestAuthDiagnostics';
+// TEMPORARY — outbound call setup timing investigation. Remove once resolved.
+import './src/sip/callTimingDiagnostics';
 
 import { AppRegistry } from 'react-native';
 import App from './App';

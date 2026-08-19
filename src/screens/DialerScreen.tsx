@@ -6,6 +6,9 @@ import { useSip } from '../hooks/useSip';
 import { sipEngine } from '../sip/SipEngine';
 import { ensureCallPermissions } from '../permissions/permissions';
 import { colors, spacing } from '../theme/theme';
+// TEMPORARY — outbound call setup timing investigation. Remove alongside
+// src/sip/callTimingDiagnostics.ts once resolved.
+import { markCallStart } from '../sip/callTimingDiagnostics';
 
 interface Props {
   /** Prefilled when arriving from Contacts or History. */
@@ -24,6 +27,7 @@ export default function DialerScreen({ initialNumber = '', onCallStarted }: Prop
 
   const placeCall = useCallback(async () => {
     if (!number.trim()) return;
+    markCallStart(number);
 
     const { ok, blocked } = await ensureCallPermissions();
     if (!ok) {

@@ -57,6 +57,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Restore a previous session on cold start.
   useEffect(() => {
+    // TEMPORARY — Scenario C (swipe-away) diagnostic investigation. This
+    // effect only runs once the "EgoVoip" root component actually mounts,
+    // which requires an Activity (ReactRootView) — a bare Service-triggered
+    // process restart (no Activity) does NOT reach this line, so if a swipe-
+    // away kills the process, this timestamp marks the earliest possible
+    // moment sipEngine.start()/REGISTER could happen again, however long
+    // after the native process itself restarted (see MainApplication's
+    // "process started" log) and after this JS module re-evaluated (see
+    // "SipEngine module evaluated" log).
+    console.log('[keepalive-diag] AuthProvider root mounted (Activity attached) at', Date.now());
     let cancelled = false;
     (async () => {
       const restored = await loadSession();

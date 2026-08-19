@@ -8,6 +8,8 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.os.Process
+import android.os.SystemClock
 import android.util.Log
 
 /**
@@ -71,19 +73,40 @@ class SipKeepAliveService : Service() {
     }
   }
 
+  // TEMPORARY — Scenario C (swipe-away) diagnostic investigation. Distinct
+  // from process death itself: the OS's Low Memory Killer SIGKILLs a
+  // process with no callback of any kind, so onDestroy below is NOT proof
+  // the process survived a swipe — it only proves the *service object* was
+  // torn down cleanly (e.g. our own stop()) BEFORE any kill. The only real
+  // evidence of "did the whole process die and get recreated" is comparing
+  // this PID (and the elapsedRealtime, which resets to 0 on device reboot
+  // but keeps counting through app/process kills, unlike wall-clock time)
+  // across log lines from before and after a swipe-away test.
+  private fun pidTag(): String =
+    "pid=${Process.myPid()} | elapsedRealtime=${SystemClock.elapsedRealtime()}"
+
   override fun onCreate() {
     super.onCreate()
-    Log.d(TAG, "[keepalive-diag] service actually created")
+    Log.d(TAG, "[keepalive-diag] service actually created | ${pidTag()}")
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    // A null intent here (with isRunning already false) is the specific
+    // signature of an OS-triggered START_STICKY restart after a process
+    // kill — as opposed to intent != null, which is always our own explicit
+    // startKeepAlive() call from JS (see SipKeepAliveModule.startKeepAlive).
+    Log.d(
+      TAG,
+      "[keepalive-diag] onStartCommand entered | intent==null: ${intent == null} | " +
+        "wasAlreadyRunning: $isRunning | ${pidTag()}",
+    )
     if (isRunning) {
       Log.d(TAG, "[keepalive-diag] onStartCommand called while already running — no duplicate instance, same service reused")
     }
     val notification = buildNotification(this, "E-GO שיחות", "מוכן לקבלת שיחות")
     startForeground(NOTIFICATION_ID, notification)
     isRunning = true
-    Log.d(TAG, "[keepalive-diag] startForeground completed")
+    Log.d(TAG, "[keepalive-diag] startForeground completed | ${pidTag()}")
 
     // START_STICKY: if the OS kills this process under memory pressure, ask
     // it to recreate the service (onStartCommand called again with a null
@@ -102,12 +125,21 @@ class SipKeepAliveService : Service() {
 
   override fun onTaskRemoved(rootIntent: Intent?) {
     super.onTaskRemoved(rootIntent)
-    Log.d(TAG, "[keepalive-diag] onTaskRemoved (app swiped away from Recents) — service continues intentionally, not calling stopSelf()")
+    Log.d(
+      TAG,
+      "[keepalive-diag] onTaskRemoved (app swiped away from Recents) — " +
+        "service continues intentionally, not calling stopSelf() | ${pidTag()}",
+    )
   }
 
   override fun onDestroy() {
     isRunning = false
-    Log.d(TAG, "[keepalive-diag] service destroyed")
+    // If this line is MISSING between a swipe-away and the next
+    // onStartCommand's "wasAlreadyRunning: false", the service (and
+    // therefore the whole process, since nothing else would restart it)
+    // was SIGKILLed directly — onDestroy is only called on a clean stop,
+    // never on an OS low-memory kill.
+    Log.d(TAG, "[keepalive-diag] service destroyed (clean stop, not a kill) | ${pidTag()}")
     super.onDestroy()
   }
 }

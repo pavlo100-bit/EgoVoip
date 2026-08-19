@@ -34,6 +34,15 @@ import { ensureNotificationPermission } from '../permissions/permissions';
 
 export function PermanentCredentialAuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
+    // TEMPORARY — Scenario C (swipe-away) diagnostic investigation. See the
+    // matching log/comment in AuthContext.tsx — this effect only runs once
+    // an Activity (ReactRootView) mounts the "EgoVoip" root component, so
+    // this timestamp marks the earliest possible moment a fresh
+    // sipEngine.start()/REGISTER could happen after a process restart.
+    console.log(
+      '[keepalive-diag] PermanentCredentialAuthProvider root mounted (Activity attached) at',
+      Date.now(),
+    );
     // Same wiring AuthProvider does, so Recents/call history work normally.
     callHistory.load();
     sipEngine.onCallEnded = info => callHistory.record(info);

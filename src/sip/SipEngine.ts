@@ -670,9 +670,22 @@ class SipEngine extends Emitter {
  * seconds). '_BUNDLE_' plays incallmanager_ringtone.mp3 from the app bundle and
  * falls back to the system ringtone when that asset is missing. 30s matches the
  * usual PBX ring timeout.
+ *
+ * Wrapped defensively: this is called synchronously from handleNewSession,
+ * the very first thing that runs for an incoming call, before this.publish()
+ * ever fires — an uncaught throw here (e.g. a missing VIBRATE permission,
+ * confirmed as the cause of an incoming-call crash on a real device; fixed
+ * in AndroidManifest.xml, but this is insurance against the same class of
+ * failure recurring for any other reason) would silently prevent the
+ * incoming-call UI from ever appearing at all. Ringtone/vibration is
+ * call-setup feedback, never worth losing the whole incoming call over.
  */
 function startRingtone(): void {
-  InCallManager.startRingtone('_BUNDLE_', [0, 1000, 800], 'playback', 30);
+  try {
+    InCallManager.startRingtone('_BUNDLE_', [0, 1000, 800], 'playback', 30);
+  } catch (e) {
+    logIncoming('startRingtone() failed (non-fatal)', e instanceof Error ? e.message : String(e));
+  }
 }
 
 /**

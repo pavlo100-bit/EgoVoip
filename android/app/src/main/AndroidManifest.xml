@@ -9,6 +9,11 @@
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
+    <!-- Incoming-call ringtone vibration (InCallManager.startRingtone's
+         vibrate_pattern argument) — a normal manifest permission, not a
+         runtime/dangerous one, so no request flow is needed. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <!-- Contacts tab -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
 

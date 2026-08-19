@@ -3,6 +3,10 @@ import cors from 'cors';
 import express from 'express';
 import { ZadarmaKeyBridgeProvider } from './sip-providers/ZadarmaKeyBridgeProvider';
 import { createAuthRouter } from './routes/auth';
+// TEMPORARY, TEST-ONLY — Zadarma incoming-call timing investigation. See
+// server/src/routes/zadarmaWebhookTest.ts. Remove once the timing question
+// is answered.
+import { createZadarmaWebhookTestRouter } from './routes/zadarmaWebhookTest';
 
 const { ZADARMA_API_KEY, ZADARMA_API_SECRET, PORT } = process.env;
 
@@ -23,7 +27,11 @@ const provider = new ZadarmaKeyBridgeProvider({
 const app = express();
 app.use(cors());
 app.use(express.json());
+// Zadarma's PBX webhooks POST form-encoded bodies (PHP $_POST convention),
+// not JSON — needed for the test webhook route below.
+app.use(express.urlencoded({ extended: true }));
 app.use(createAuthRouter(provider));
+app.use(createZadarmaWebhookTestRouter(ZADARMA_API_SECRET));
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
 

@@ -21,10 +21,19 @@ interface DtmfToneNativeModule {
 const nativeModule: DtmfToneNativeModule | undefined =
   Platform.OS === 'android' ? NativeModules.DtmfTone : undefined;
 
+// TEMPORARY — "no sound at all" investigation. [dtmf-diag], safe to grep,
+// safe to remove once the real cause is confirmed and fixed.
+console.log(
+  '[dtmf-diag] JS module load — Platform.OS:', Platform.OS,
+  '| NativeModules.DtmfTone present:', !!NativeModules.DtmfTone,
+  '| resolved nativeModule:', !!nativeModule,
+);
+
 export function playKeypadTone(key: string): void {
+  console.log('[dtmf-diag] playKeypadTone() called | key:', key, '| nativeModule present:', !!nativeModule);
   try {
     nativeModule?.playTone(key);
-  } catch {
-    // Never let local tone feedback take down a real keypress.
+  } catch (e) {
+    console.log('[dtmf-diag] playTone() threw:', e instanceof Error ? e.message : e);
   }
 }

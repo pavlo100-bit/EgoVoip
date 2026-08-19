@@ -66,6 +66,11 @@ yarn-error.log
 # testing
 /coverage
 
+# Local-only credentials, never committed — see the matching .example file
+# next to each of these for what they're for. (server/.env has its own
+# server/.gitignore entry already.)
+*.local.ts
+
 # Yarn
 .yarn/*
 !.yarn/patches

@@ -4,7 +4,7 @@
  * normal build (the default state) never reaches this screen at all.
  */
 import React, { useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { AppState, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSip } from '../hooks/useSip';
 import { startPermanentCredentialTest } from '../sip/permanentCredentialTest';
@@ -14,7 +14,25 @@ export default function PermanentCredentialTestScreen() {
   const { registration, registrationError } = useSip();
 
   useEffect(() => {
+    // TEMPORARY — mount/unmount tracking for the "why does REGISTER drop
+    // after ~7s" investigation. If 'unmounted' ever prints, the component
+    // was torn down (Fast Refresh remount, or App.tsx re-rendered this
+    // branch away) — ruling that in or out of the disconnect's cause.
+    console.log('[sip-diag] PermanentCredentialTestScreen mounted');
     startPermanentCredentialTest();
+
+    return () => {
+      console.log('[sip-diag] PermanentCredentialTestScreen UNMOUNTED');
+    };
+  }, []);
+
+  useEffect(() => {
+    // TEMPORARY — same investigation. Confirms/rules out Android
+    // backgrounding (Doze, App Standby) as the disconnect trigger.
+    const sub = AppState.addEventListener('change', state => {
+      console.log('[sip-diag] AppState changed to', state);
+    });
+    return () => sub.remove();
   }, []);
 
   return (

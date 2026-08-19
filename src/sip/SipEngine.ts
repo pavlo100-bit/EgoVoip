@@ -184,6 +184,11 @@ class SipEngine extends Emitter {
     this.closeAudioSession();
 
     if (this.ua) {
+      // TEMPORARY — stop() strips listeners before ua.stop(), so a
+      // disconnect caused by OUR code calling stop() would otherwise never
+      // reach the [sip-diag] event listeners at all. This line is the only
+      // way to see it happened.
+      console.log('[sip-diag] SipEngine.stop() tearing down an active UA');
       this.ua.removeAllListeners();
       this.ua.stop();
       this.ua = null;
@@ -625,3 +630,12 @@ function describeCause(cause?: string): string | null {
 }
 
 export const sipEngine = new SipEngine();
+
+// TEMPORARY diagnostic — part of the "why does REGISTER drop after ~7s"
+// investigation. Fires exactly once per JS module evaluation. If this line
+// prints a SECOND time during a single test run, the JS context was torn
+// down and rebuilt (Metro full reload / Fast Refresh remounting the module
+// tree) — not something our own application code did, since sipEngine is a
+// singleton that would otherwise persist for the life of the JS context.
+// Remove alongside the other REGISTER-401 diagnostics once resolved.
+console.log('[sip-diag] SipEngine module evaluated at', Date.now());

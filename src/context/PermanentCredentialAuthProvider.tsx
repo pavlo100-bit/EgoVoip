@@ -46,6 +46,17 @@ export function PermanentCredentialAuthProvider({ children }: { children: React.
     // Same wiring AuthProvider does, so Recents/call history work normally.
     callHistory.load();
     sipEngine.onCallEnded = info => callHistory.record(info);
+    // This effect re-runs on every fresh Activity/ReactRootView mount (e.g.
+    // the incoming-call notification bringing MainActivity forward) even
+    // though the underlying JS process — and therefore the sipEngine
+    // singleton — never went away. This log marks that case at the provider
+    // layer; SipEngine.start() (called via startPermanentCredentialTest()
+    // below, unconditionally, on every mount) is the actual enforcement
+    // point that decides whether to skip or restart — see its own
+    // [keepalive-diag] logs for that authoritative decision.
+    if (sipEngine.isActive) {
+      console.log('[keepalive-diag] provider mounted — reusing existing SipEngine');
+    }
     startPermanentCredentialTest();
     // This provider treats "test session started" as synonymous with
     // "signed in" (status below is hardcoded 'signedIn' regardless of actual

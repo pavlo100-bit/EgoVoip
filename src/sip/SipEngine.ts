@@ -100,10 +100,51 @@ class SipEngine extends Emitter {
     this.emit();
   }
 
+  /** 'connecting' or 'registered' — a UA that is currently doing something useful. */
+  get isActive(): boolean {
+    return this.registration === 'connecting' || this.registration === 'registered';
+  }
+
+  /** Would start(credentials) be reusing the exact same SIP account currently loaded? */
+  hasSameIdentity(credentials: SipCredentials): boolean {
+    return sameCredentials(this.credentials, credentials);
+  }
+
   // ------------------------------------------------------------ registration
 
+  /**
+   * Idempotency guard — SipEngine is the single owner of the SIP/WebRTC
+   * lifecycle, and every caller (cold-start restore, sign-in, the foreground
+   * re-registration effect, or a React provider simply remounting because a
+   * new Activity/ReactRootView was created — e.g. by the incoming-call
+   * notification's full-screen intent bringing MainActivity forward) may
+   * call start() at any time, including while a call is ringing. Without
+   * this guard, start() unconditionally called stop() first, which
+   * terminates every live call — this is exactly what tore down a
+   * just-arrived incoming RTCSession the instant the notification remounted
+   * the root provider (confirmed by real-device logs: 'session failed |
+   * originator: local, cause: Rejected' fired ~8ms after the provider's
+   * mount effect re-ran with unchanged credentials).
+   *
+   * The check lives here, in start() itself, rather than in each caller —
+   * a caller-side check is only as strong as the least careful caller (and
+   * there is no way to audit every future call site); centralizing it here
+   * gives every current and future caller the same protection automatically.
+   */
   async start(credentials: SipCredentials): Promise<void> {
-    if (this.ua) await this.stop();
+    if (this.ua) {
+      const same = sameCredentials(this.credentials, credentials);
+      if (same && this.isActive) {
+        console.log('[keepalive-diag] SipEngine.start skipped — already active with same identity');
+        return;
+      }
+      console.log(
+        same
+          ? '[keepalive-diag] SipEngine.start reconnecting — existing UA present but not active (same identity)'
+          : '[keepalive-diag] actual account change — restarting SipEngine',
+      );
+      await this.stop();
+    }
 
     this.credentials = credentials;
     this.registration = 'connecting';
@@ -837,6 +878,29 @@ export function toSipUri(target: string, domain: string): string | null {
   // (E.164 prefix, feature codes, IVR input).
   const user = raw.replace(/[^0-9*#+]/g, '');
   return user ? `sip:${user}@${domain}` : null;
+}
+
+/**
+ * "Same SIP account, currently authenticated the same way" — deliberately
+ * compares every field (not just username/domain) so that a genuine
+ * credential change (e.g. a rotated password from
+ * api.refreshSipCredentials(), or a real account switch) is never mistaken
+ * for a harmless remount. Field-by-field rather than JSON.stringify for the
+ * scalar fields (key-order-proof); iceServers is compared via
+ * JSON.stringify since both sides originate from the same JSON-shaped
+ * credential payload in practice.
+ */
+function sameCredentials(a: SipCredentials | null, b: SipCredentials): boolean {
+  if (!a) return false;
+  return (
+    a.username === b.username &&
+    a.password === b.password &&
+    a.domain === b.domain &&
+    a.wsUri === b.wsUri &&
+    a.displayName === b.displayName &&
+    a.conferenceBridge === b.conferenceBridge &&
+    JSON.stringify(a.iceServers ?? null) === JSON.stringify(b.iceServers ?? null)
+  );
 }
 
 function describeCause(cause?: string): string | null {

@@ -74,6 +74,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (restored) {
         setSession(restored);
         setStatus('signedIn');
+        // See the matching comment/log in PermanentCredentialAuthProvider —
+        // this effect re-runs on every fresh Activity mount even though the
+        // underlying sipEngine singleton (same JS process) may already be
+        // active. sipEngine.start() below is the actual enforcement point.
+        if (sipEngine.isActive) {
+          console.log('[keepalive-diag] provider mounted — reusing existing SipEngine');
+        }
         sipEngine
           .start(restored.sip)
           .then(() => {

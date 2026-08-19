@@ -1,4 +1,4 @@
-import { AppState } from 'react-native';
+import { AppState, DeviceEventEmitter } from 'react-native';
 import JsSIP from 'jssip';
 import InCallManager from 'react-native-incall-manager';
 import { ENV } from '../config/env';
@@ -9,6 +9,12 @@ import { logCallEvent } from './callTimingDiagnostics';
 // TEMPORARY — foreground incoming-call investigation. Remove alongside
 // src/sip/incomingCallDiagnostics.ts once resolved.
 import { logIncoming } from './incomingCallDiagnostics';
+// Phase 3b (minimal) — background incoming-call presentation. See
+// android/app/src/main/java/com/egovoip/IncomingCallNotifier.kt.
+import {
+  hideIncomingCallNotification,
+  showIncomingCallNotification,
+} from '../native/incomingCallNotifier';
 import type {
   CallDirection,
   CallStatus,
@@ -141,6 +147,17 @@ class SipEngine extends Emitter {
       this.registrationError = e?.error
         ? `Transport error: ${e.reason ?? 'websocket closed'}`
         : 'Disconnected';
+      // A ringing inbound session has no way to ever receive a CANCEL/BYE
+      // now that the transport is gone — without this, the ringtone/
+      // notification would play forever since the terminal JsSIP event
+      // ('ended'/'failed') this normally relies on will never arrive.
+      for (const record of [...this.calls.values()]) {
+        if (record.status === 'ringing') {
+          logIncoming('finalizing ringing call — transport lost', `callId: ${record.id}`);
+          stopRingtone('WebSocket disconnected while ringing');
+          this.finalize(record.id, 'Transport lost while ringing');
+        }
+      }
       this.publish();
     });
 
@@ -179,6 +196,10 @@ class SipEngine extends Emitter {
   }
 
   async stop(): Promise<void> {
+    // Safety net: stop() clears `this.calls` directly below rather than
+    // routing each record through finalize(), so it's the one teardown path
+    // that would otherwise bypass every other stopRingtone() call site.
+    stopRingtone('SipEngine.stop()');
     for (const record of this.calls.values()) {
       try {
         record.session.terminate();
@@ -294,6 +315,7 @@ class SipEngine extends Emitter {
     // talking should beep, not blast the ringtone.
     if (direction === 'inbound' && this.calls.size === 1) {
       startRingtone();
+      showIncomingCallNotification(record.id, record.remoteName, record.remoteNumber);
     }
 
     this.publish();
@@ -327,7 +349,7 @@ class SipEngine extends Emitter {
       if (record.direction === 'outbound') logCallEvent('RTCSession "accepted"');
       if (record.direction === 'inbound') logIncoming('session accepted');
       InCallManager.stopRingback();
-      InCallManager.stopRingtone();
+      stopRingtone('session accepted');
     });
 
     session.on('confirmed', () => {
@@ -339,7 +361,7 @@ class SipEngine extends Emitter {
       r.answeredAt = r.answeredAt ?? Date.now();
       this.activeCallId = id;
       InCallManager.stopRingback();
-      InCallManager.stopRingtone();
+      stopRingtone('session confirmed');
       this.openAudioSession();
       this.publish();
     });
@@ -368,6 +390,12 @@ class SipEngine extends Emitter {
         );
         if (e?.originator === 'remote') logIncoming('remote hangup');
       }
+      // Unconditional: covers every JsSIP-reported termination cause for a
+      // ringing inbound session — remote cancel, remote reject, session
+      // failure/timeout — without needing to special-case which cause maps
+      // to "was ringing". Redundant/no-op for outbound calls and for
+      // already-answered inbound calls, which is fine (see stopRingtone).
+      stopRingtone(`session ${jssipEvent} (${e?.cause ?? 'no cause'})`);
       this.finalize(id, e?.cause);
     };
     session.on('ended', finish('ended'));
@@ -396,7 +424,7 @@ class SipEngine extends Emitter {
     record.session.on('peerconnection', iceHandlers.peerconnection);
     record.session.on('icecandidate', iceHandlers.icecandidate);
 
-    InCallManager.stopRingtone();
+    stopRingtone('local answer');
     record.session.answer({
       mediaConstraints: { audio: true, video: false },
       pcConfig: { iceServers: this.iceServers() },
@@ -409,7 +437,7 @@ class SipEngine extends Emitter {
     const record = this.calls.get(callId);
     if (!record) return;
     logIncoming('Reject pressed', `callId: ${callId}`);
-    InCallManager.stopRingtone();
+    stopRingtone('local reject');
     try {
       record.session.terminate({ status_code: 486, reason_phrase: 'Busy Here' });
     } catch {
@@ -603,7 +631,7 @@ class SipEngine extends Emitter {
     if (!this.audioSessionOpen) return;
     logIncoming('audio session stopped');
     InCallManager.stopRingback();
-    InCallManager.stopRingtone();
+    stopRingtone('closeAudioSession');
     InCallManager.stop();
     this.audioSessionOpen = false;
     this.speakerOn = false;
@@ -690,6 +718,33 @@ function startRingtone(): void {
   } catch (e) {
     logIncoming('startRingtone() failed (non-fatal)', e instanceof Error ? e.message : String(e));
   }
+}
+
+/**
+ * Single choke point for silencing the incoming-call ringtone AND dismissing
+ * the incoming-call notification (IncomingCallNotifier) together — the two
+ * must never drift apart, which is exactly the bug class behind a runaway
+ * ringtone. Wired into every terminal/transition path a ringing inbound
+ * session can take: local answer, local reject, remote cancel/hangup and
+ * session failure (both surface as JsSIP 'ended'/'failed', any cause),
+ * transport loss while still ringing, and full SipEngine teardown —
+ * SipEngine/session lifecycle owns this end to end, independent of whether
+ * any React component is mounted to react to it.
+ *
+ * Both InCallManager.stopRingtone() and hideIncomingCallNotification() are
+ * no-ops when nothing is currently ringing/shown, so calling this
+ * redundantly from multiple handlers for the same call (e.g. both
+ * 'confirmed' and a later 'ended') is intentional and safe, not a bug.
+ */
+function stopRingtone(reason: string): void {
+  logIncoming('stopRingtone requested', `reason: ${reason}`);
+  try {
+    InCallManager.stopRingtone();
+  } catch (e) {
+    logIncoming('stopRingtone() threw (non-fatal)', e instanceof Error ? e.message : String(e));
+  }
+  hideIncomingCallNotification();
+  logIncoming('stopRingtone completed');
 }
 
 /**
@@ -817,4 +872,18 @@ console.log('[sip-diag] SipEngine module evaluated at', Date.now());
 // Phase 3a's result is known.
 AppState.addEventListener('change', (state) => {
   console.log('[keepalive-diag] JS AppState changed to', state);
+});
+
+// Phase 3b (minimal) — the incoming-call notification's "Decline" action
+// must work without bringing the app to the foreground (Answer/tapping the
+// notification body both just do that, and RootNavigator already shows
+// IncomingCallScreen for any ringing call once foregrounded — no plumbing
+// needed there). Rejecting a SIP session is JS/JsSIP-only, so
+// IncomingCallActionReceiver (native) forwards here via
+// ReactContext.emitDeviceEvent — see that file for why this is safe to rely
+// on specifically because Phase 3a's keep-alive service keeps this JS
+// instance alive in the background in the first place.
+DeviceEventEmitter.addListener('EgoIncomingCallDecline', (e: { callId?: string }) => {
+  logIncoming('decline notification action received in JS', `callId: ${e?.callId ?? '(none)'}`);
+  if (e?.callId) sipEngine.reject(e.callId);
 });

@@ -80,5 +80,19 @@
           android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
           android:value="Maintains SIP registration so the app can receive incoming VoIP calls while backgrounded" />
       </service>
+
+      <!-- Phase 3b (minimal) — handles the "Decline" action tapped directly
+           on the incoming-call notification (IncomingCallNotifier), which
+           must work without opening the app. Internal only: never receives
+           intents from outside this app (see IncomingCallNotifier, which is
+           the only place that builds the PendingIntent targeting this
+           action). -->
+      <receiver
+        android:name=".IncomingCallActionReceiver"
+        android:exported="false">
+        <intent-filter>
+          <action android:name="com.egovoip.INCOMING_CALL_DECLINE" />
+        </intent-filter>
+      </receiver>
     </application>
 </manifest>

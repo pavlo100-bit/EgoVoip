@@ -14,6 +14,11 @@ import { callHistory } from '../storage/callHistory';
 // TEMPORARY — Phase 3a foreground-keep-alive-service investigation. Remove
 // alongside SipKeepAliveService once Phase 3a's result is known.
 import { startKeepAlive, stopKeepAlive } from '../native/sipKeepAlive';
+// Phase 3b (minimal) — POST_NOTIFICATIONS (Android 13+) gates whether the
+// incoming-call notification can be posted at all; request it up front so
+// it's already granted by the time a call arrives, same trigger point as
+// the keep-alive service.
+import { ensureNotificationPermission } from '../permissions/permissions';
 import type { AuthSession } from '../types';
 
 type Status = 'loading' | 'signedOut' | 'signedIn';
@@ -61,7 +66,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setStatus('signedIn');
         sipEngine
           .start(restored.sip)
-          .then(() => startKeepAlive())
+          .then(() => {
+            startKeepAlive();
+            ensureNotificationPermission();
+          })
           .catch(e => setError(String(e)));
       } else {
         setStatus('signedOut');
@@ -89,6 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await saveSession(updated);
         await sipEngine.start(sip);
         startKeepAlive();
+        ensureNotificationPermission();
       } catch (e) {
         if (e instanceof api.ApiError && (e.status === 401 || e.status === 403)) {
           await doSignOut();
@@ -111,6 +120,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setStatus('signedIn');
       await sipEngine.start(next.sip);
       startKeepAlive();
+      ensureNotificationPermission();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Sign-in failed');
       throw e;

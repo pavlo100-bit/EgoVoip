@@ -29,6 +29,8 @@ import { startPermanentCredentialTest } from '../sip/permanentCredentialTest';
 // TEMPORARY — Phase 3a foreground-keep-alive-service investigation. Remove
 // alongside SipKeepAliveService once Phase 3a's result is known.
 import { startKeepAlive, stopKeepAlive } from '../native/sipKeepAlive';
+// Phase 3b (minimal) — see AuthContext.tsx for why this is requested here.
+import { ensureNotificationPermission } from '../permissions/permissions';
 
 export function PermanentCredentialAuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -42,6 +44,7 @@ export function PermanentCredentialAuthProvider({ children }: { children: React.
     // basis rather than threading a registration-success callback through
     // startPermanentCredentialTest().
     startKeepAlive();
+    ensureNotificationPermission();
     return () => {
       sipEngine.onCallEnded = null;
     };

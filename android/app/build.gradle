@@ -72,6 +72,67 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+/**
+ * Real release signing — see keystore.properties.example for how to
+ * generate a real keystore and fill this in. keystore.properties itself is
+ * gitignored (never committed); this file only reads it if present, so nothing
+ * breaks for anyone who hasn't created one yet.
+ */
+def keystorePropertiesFile = file('keystore.properties')
+def hasReleaseKeystore = keystorePropertiesFile.exists()
+def keystoreProperties = new Properties()
+if (hasReleaseKeystore) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+} else {
+    logger.warn(
+        "WARNING: android/app/keystore.properties not found — the 'release' build type " +
+        "will be signed with the DEBUG keystore. That's fine for a private single-device " +
+        "beta only — never for distribution to anyone else. See " +
+        "android/app/keystore.properties.example to set up real release signing."
+    )
+}
+
+/**
+ * Beta-provisioning safety guard — src/config/permanentSipTest.local.ts is a
+ * dev-only test fixture (gitignored, filled in locally with a real SIP
+ * password to test against a live account). App.tsx imports it
+ * unconditionally, so whatever is in that file's `password` field gets
+ * compiled as a plaintext string into WHATEVER JS bundle is built —
+ * including a release bundle — regardless of runtime __DEV__ checks. This
+ * task fails any release build outright if that field is non-empty, so a
+ * real SIP password can never be silently packaged into a distributable
+ * APK. For a private beta on your OWN phone only, where using that same
+ * test identity on purpose is fine, override explicitly:
+ *   ./gradlew assembleRelease -PallowDevSipSecretsInRelease=true
+ */
+tasks.register('assertNoDevSipSecretsForRelease') {
+    doLast {
+        def localFile = file("${rootProject.projectDir}/../src/config/permanentSipTest.local.ts")
+        if (!localFile.exists()) return
+        def content = localFile.text
+        def matcher = (content =~ /password:\s*['"]([^'"]*)['"]/)
+        def hasSecret = matcher.find() && matcher.group(1).trim().length() > 0
+        def allowOverride = project.hasProperty('allowDevSipSecretsInRelease') &&
+            project.property('allowDevSipSecretsInRelease').toString() == 'true'
+        if (hasSecret && !allowOverride) {
+            throw new GradleException(
+                "\n\nRELEASE BLOCKED: src/config/permanentSipTest.local.ts has a non-empty SIP " +
+                "password. App.tsx imports this file unconditionally, so it would be compiled as " +
+                "a plaintext string into the release JS bundle.\n" +
+                "  - For a real distributable beta: clear the password field in that file, then rebuild.\n" +
+                "  - For a private, single-device test using this identity on purpose, rerun with:\n" +
+                "      ./gradlew assembleRelease -PallowDevSipSecretsInRelease=true\n"
+            )
+        }
+        if (hasSecret && allowOverride) {
+            logger.warn(
+                "WARNING: building release WITH the dev SIP test credentials embedded " +
+                "(-PallowDevSipSecretsInRelease=true). Do not distribute this APK to anyone else."
+            )
+        }
+    }
+}
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -92,18 +153,33 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        if (hasReleaseKeystore) {
+            release {
+                storeFile file(keystoreProperties['RELEASE_STORE_FILE'])
+                storePassword keystoreProperties['RELEASE_STORE_PASSWORD']
+                keyAlias keystoreProperties['RELEASE_KEY_ALIAS']
+                keyPassword keystoreProperties['RELEASE_KEY_PASSWORD']
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // Real release keystore if keystore.properties exists (see above);
+            // falls back to the debug keystore otherwise — fine for a private
+            // single-device beta, never for real distribution.
+            signingConfig hasReleaseKeystore ? signingConfigs.release : signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
+    }
+}
+
+afterEvaluate {
+    tasks.matching { it.name == 'assembleRelease' || it.name == 'bundleRelease' }.configureEach {
+        dependsOn 'assertNoDevSipSecretsForRelease'
     }
 }
 

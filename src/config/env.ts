@@ -5,15 +5,21 @@
 export const ENV = {
   /**
    * Your backend that issues the auth token and the SIP credentials.
-   * Phase 1 / local dev: `cd server && npm run dev`, then on the device run
-   * `adb reverse tcp:4000 tcp:4000` — that forwards the device's own
-   * 127.0.0.1:4000 to your machine's :4000 over the USB connection, so this
-   * works over USB regardless of which Wi-Fi/cellular network the phone is
-   * on. (If you'd rather use the LAN instead of USB, swap this for your
-   * machine's LAN IP, e.g. "http://192.168.1.50:4000" — but note the phone
-   * and the backend then both need to be on the same network.)
+   *
+   * Debug builds (Metro/adb attached): `cd server && npm run dev`, then on
+   * the device run `adb reverse tcp:4000 tcp:4000` — that forwards the
+   * device's own 127.0.0.1:4000 to your machine's :4000 over the USB
+   * connection, so this works over USB regardless of which Wi-Fi/cellular
+   * network the phone is on.
+   *
+   * Release builds (standalone APK, no Metro/adb/USB) cannot reach
+   * 127.0.0.1 at all — that address means the phone itself, not your dev
+   * machine — so __DEV__ (false in any release JS bundle) switches to the
+   * real deployed backend instead.
    */
-  API_BASE_URL: 'http://127.0.0.1:4000',
+  API_BASE_URL: __DEV__
+    ? 'http://127.0.0.1:4000'
+    : 'https://egovoip-production.up.railway.app',
 
   /** ICE servers. Replace with your own TURN — without TURN, calls fail on
    *  symmetric-NAT mobile networks (a large share of carrier NATs). */
